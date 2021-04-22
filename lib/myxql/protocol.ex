@@ -158,7 +158,6 @@ defmodule MyXQL.Protocol do
     client_capability_flags =
       put_capability_flags([
         :client_protocol_41,
-        :client_plugin_auth,
         :client_secure_connection,
         :client_found_rows,
         :client_multi_results,
