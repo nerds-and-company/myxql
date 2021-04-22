@@ -46,7 +46,7 @@ defmodule MyXQL.Protocol.Auth do
         sha256_password(config.password, initial_auth_plugin_data)
 
       true ->
-        ""
+        mysql_native_password(config.password, initial_auth_plugin_data)
     end
   end
 
