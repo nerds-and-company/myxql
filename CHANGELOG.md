@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.6.3 (2022-09-22)
+
+* Print query statement in error log
+* Add count to table reader metadata
+
+## v0.6.2 (2021-04-27)
+
+* Implement the Table.Reader protocol for query result
+
+## v0.6.1 (2022-01-25)
+
+* Revert allowing a given cache name to be reprepared as it leaks statements
+
+## v0.6.0 (2022-01-23)
+
+* Fix handling stored procedures with cursors
+* Allow a given cache name to be reprepared
+* Support queries returning multiple results
+* Reuse prepared statements in `prepare: :unnamed`
+
+## v0.5.2 (2022-01-03)
+
+* Use optimized `Geo.WKB` API
+* Update DBConnection
+* Require Elixir v1.7
+
 ## v0.5.1 (2021-03-25)
 
 Bug fixes:

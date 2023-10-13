@@ -177,6 +177,56 @@ defmodule MyXQLTest do
         assert result.num_rows == num
       end
     end
+
+    test "query_many/4 with text", c do
+      assert {:ok, [%MyXQL.Result{rows: [[1]]}, %MyXQL.Result{rows: [[2]]}]} =
+               MyXQL.query_many(c.conn, "SELECT 1; SELECT 2", [], query_type: :text)
+
+      assert {:ok, [%MyXQL.Result{rows: [[1]]}]} =
+               MyXQL.query_many(c.conn, "SELECT 1;", [], query_type: :text)
+    end
+
+    test "query_many!/4 with text", c do
+      assert [%MyXQL.Result{rows: [[1]]}, %MyXQL.Result{rows: [[2]]}] =
+               MyXQL.query_many!(c.conn, "SELECT 1; SELECT 2", [], query_type: :text)
+
+      assert [%MyXQL.Result{rows: [[1]]}] =
+               MyXQL.query_many!(c.conn, "SELECT 1;", [], query_type: :text)
+    end
+
+    test "table reader integration", c do
+      assert {:ok, result} =
+               MyXQL.query(
+                 c.conn,
+                 """
+                 SELECT 1 AS x, 'a' AS y
+                 UNION
+                 SELECT 2 AS x, 'b' AS y
+                 UNION
+                 SELECT 3 AS x, 'c' AS y
+                 """,
+                 []
+               )
+
+      assert result |> Table.to_rows() |> Enum.to_list() == [
+               %{"x" => 1, "y" => "a"},
+               %{"x" => 2, "y" => "b"},
+               %{"x" => 3, "y" => "c"}
+             ]
+
+      columns = Table.to_columns(result)
+      assert Enum.to_list(columns["x"]) == [1, 2, 3]
+      assert Enum.to_list(columns["y"]) == ["a", "b", "c"]
+
+      assert {_, %{count: 3}, _} = Table.Reader.init(result)
+    end
+
+    test "query statement is printed in error", c do
+      {:error, e} = MyXQL.query(c.conn, "SELECT not_a_column FROM integers", [])
+      error_log = MyXQL.Error.message(e)
+      assert error_log =~ "query: SELECT not_a_column FROM integers"
+      assert error_log =~ "(1054) Unknown column"
+    end
   end
 
   describe ":prepare option" do
@@ -614,21 +664,24 @@ defmodule MyXQLTest do
       assert %MyXQL.Result{rows: [[1]]} =
                MyXQL.query!(c.conn, "CALL single_procedure()", [], query_type: :text)
 
-      assert_raise RuntimeError, "returning multiple results is not yet supported", fn ->
-        assert %MyXQL.Result{rows: [[1]]} = MyXQL.query!(c.conn, "CALL multi_procedure()")
-      end
+      assert [%MyXQL.Result{rows: [[1]]}, %MyXQL.Result{rows: [[2]]}] =
+               MyXQL.query_many!(c.conn, "CALL multi_procedure()")
     end
 
     test "prepared query", c do
-      assert {_, %MyXQL.Result{rows: [[1]]}} =
+      assert {%MyXQL.Query{}, %MyXQL.Result{rows: [[1]]}} =
                MyXQL.prepare_execute!(c.conn, "", "CALL single_procedure()")
 
-      assert {_, %MyXQL.Result{rows: [[1]]}} =
+      assert {%MyXQL.Query{}, %MyXQL.Result{rows: [[1]]}} =
                MyXQL.prepare_execute!(c.conn, "", "CALL single_procedure()")
 
-      assert_raise RuntimeError, "returning multiple results is not yet supported", fn ->
-        MyXQL.prepare_execute!(c.conn, "", "CALL multi_procedure()")
-      end
+      assert {%MyXQL.Queries{}, [%MyXQL.Result{rows: [[1]]}, %MyXQL.Result{rows: [[2]]}]} =
+               MyXQL.prepare_execute_many!(c.conn, "", "CALL multi_procedure()")
+
+      assert %MyXQL.Queries{} = query = MyXQL.prepare_many!(c.conn, "", "CALL multi_procedure()")
+
+      assert [%MyXQL.Result{rows: [[1]]}, %MyXQL.Result{rows: [[2]]}] =
+               MyXQL.execute_many!(c.conn, query)
     end
 
     test "stream procedure with single result", c do
@@ -646,12 +699,79 @@ defmodule MyXQLTest do
     test "stream procedure with multiple results", c do
       statement = "CALL multi_procedure()"
 
-      assert_raise RuntimeError, "returning multiple results is not yet supported", fn ->
+      assert_raise RuntimeError, ~r"returning multiple results is not supported", fn ->
         MyXQL.transaction(c.conn, fn conn ->
           stream = MyXQL.stream(conn, statement, [], max_rows: 2)
           Enum.to_list(stream)
         end)
       end
+    end
+  end
+
+  describe "multiple results" do
+    setup :connect
+
+    test "using query/4 with a multiple result query", c do
+      assert_raise RuntimeError, ~r"returning multiple results is not supported", fn ->
+        MyXQL.query(c.conn, "SELECT 1; SELECT 2;", [], query_type: :text)
+      end
+    end
+
+    test "using prepare/4 with a multiple result query", c do
+      {:error, error} = MyXQL.prepare(c.conn, "foo", "SELECT 1; SELECT 2;")
+      assert error.message =~ "You have an error in your SQL syntax"
+    end
+
+    test "using prepare_execute/4 with a multiple result query", c do
+      {:error, error} = MyXQL.prepare_execute(c.conn, "foo", "SELECT 1; SELECT 2;")
+      assert error.message =~ "You have an error in your SQL syntax"
+    end
+
+    test "using execute/4 with a multiple result query", c do
+      %MyXQL.Queries{} = query = MyXQL.prepare_many!(c.conn, "", "CALL multi_procedure()")
+
+      assert_raise FunctionClauseError, fn ->
+        MyXQL.execute(c.conn, query)
+      end
+    end
+
+    test "using query_many/4 with a single result query", c do
+      assert {:ok, [%MyXQL.Result{rows: [[1]]}]} =
+               MyXQL.query_many(c.conn, "SELECT 1;", [], query_type: :text)
+    end
+
+    test "using query_many/4 with a multiple result query that is not a stored procedure", c do
+      {:error, error} = MyXQL.query_many(c.conn, "SELECT 1; SELECT 2", [], query_type: :binary)
+      assert error.message =~ "You have an error in your SQL syntax"
+    end
+
+    test "using prepare_many/4 with a multiple result query that is not a stored procedure", c do
+      {:error, error} = MyXQL.prepare_many(c.conn, "foo", "SELECT 1; SELECT 2;")
+      assert error.message =~ "You have an error in your SQL syntax"
+    end
+
+    test "using prepare_execute_many/4 with a multiple result query that is not a stored procedure",
+         c do
+      {:error, error} = MyXQL.prepare_execute_many(c.conn, "foo", "SELECT 1; SELECT 2;")
+      assert error.message =~ "You have an error in your SQL syntax"
+    end
+
+    test "using prepare_execute_many/4 with a single result query", c do
+      assert {:ok, %MyXQL.Queries{}, [%MyXQL.Result{rows: [[1]]}]} =
+               MyXQL.prepare_execute_many(c.conn, "foo", "SELECT 1;")
+    end
+
+    test "using execute_many/4 with a single result query", c do
+      %MyXQL.Query{} = query = MyXQL.prepare!(c.conn, "", "CALL single_procedure()")
+
+      assert_raise FunctionClauseError, fn ->
+        MyXQL.execute_many(c.conn, query)
+      end
+    end
+
+    test "close a multiple result prepared statement", c do
+      assert %MyXQL.Queries{} = query = MyXQL.prepare_many!(c.conn, "", "CALL multi_procedure()")
+      assert :ok == MyXQL.close(c.conn, query)
     end
   end
 
