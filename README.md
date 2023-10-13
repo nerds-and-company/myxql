@@ -21,7 +21,7 @@ Add `:myxql` to your dependencies:
 ```elixir
 def deps() do
   [
-    {:myxql, "~> 0.5.0"}
+    {:myxql, "~> 0.6.0"}
   ]
 end
 ```
@@ -160,7 +160,7 @@ mix deps.get
 mix test
 ```
 
-See [`scripts/ci.sh`](scripts/ci.sh) and [`scripts/test-versions.sh`](scripts/test-versions.sh) for scripts used to test against different server versions.
+See [`scripts/test-versions.sh`](scripts/test-versions.sh) for scripts used to test against different server versions.
 
 ## License
 

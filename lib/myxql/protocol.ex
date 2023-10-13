@@ -3,7 +3,7 @@ defmodule MyXQL.Protocol do
 
   import MyXQL.Protocol.{Flags, Records, Types}
   alias MyXQL.Protocol.Values
-  use Bitwise
+  import Bitwise
 
   defdelegate error_code_to_name(code), to: MyXQL.Protocol.ServerErrorCodes, as: :code_to_name
 
@@ -37,7 +37,7 @@ defmodule MyXQL.Protocol do
         encode_packet(rest, rest_size, next_sequence_id, max_packet_size)
       ]
     else
-      [<<payload_size::uint3, sequence_id::uint1>>, payload]
+      [<<payload_size::uint3(), sequence_id::uint1()>>, payload]
     end
   end
 
@@ -54,8 +54,8 @@ defmodule MyXQL.Protocol do
     {last_insert_id, rest} = take_int_lenenc(rest)
 
     <<
-      status_flags::uint2,
-      num_warnings::uint2,
+      status_flags::uint2(),
+      num_warnings::uint2(),
       info::binary
     >> = rest
 
@@ -69,7 +69,7 @@ defmodule MyXQL.Protocol do
   end
 
   defp decode_err_packet_body(
-         <<code::uint2, _sql_state_marker::string(1), _sql_state::string(5), message::bits>>
+         <<code::uint2(), _sql_state_marker::string(1), _sql_state::string(5), message::bits>>
        ) do
     err_packet(code: code, message: message)
   end
@@ -78,14 +78,14 @@ defmodule MyXQL.Protocol do
     decode_eof_packet_body(rest)
   end
 
-  defp decode_eof_packet_body(<<num_warnings::uint2, status_flags::uint2>>) do
+  defp decode_eof_packet_body(<<num_warnings::uint2(), status_flags::uint2()>>) do
     eof_packet(
       status_flags: status_flags,
       num_warnings: num_warnings
     )
   end
 
-  defp decode_connect_err_packet_body(<<code::uint2, message::bits>>) do
+  defp decode_connect_err_packet_body(<<code::uint2(), message::bits>>) do
     err_packet(code: code, message: message)
   end
 
@@ -99,23 +99,23 @@ defmodule MyXQL.Protocol do
     {server_version, rest} = take_string_nul(rest)
 
     <<
-      conn_id::uint4,
+      conn_id::uint4(),
       auth_plugin_data1::string(8),
       0,
-      capability_flags1::uint2,
-      charset::uint1,
-      status_flags::uint2,
-      capability_flags2::uint2,
+      capability_flags1::uint2(),
+      charset::uint1(),
+      status_flags::uint2(),
+      capability_flags2::uint2(),
       rest::binary
     >> = rest
 
-    <<capability_flags::uint4>> = <<capability_flags1::uint2, capability_flags2::uint2>>
+    <<capability_flags::uint4()>> = <<capability_flags1::uint2(), capability_flags2::uint2()>>
     # all set in servers since MySQL 4.1
     required_capabilities = [:client_protocol_41, :client_secure_connection]
 
     with :ok <- ensure_capabilities(capability_flags, required_capabilities) do
       <<
-        auth_plugin_data_length::uint1,
+        auth_plugin_data_length::uint1(),
         _::uint(10),
         rest::binary
       >> = rest
@@ -159,6 +159,7 @@ defmodule MyXQL.Protocol do
       put_capability_flags([
         :client_protocol_41,
         :client_secure_connection,
+        :client_multi_statements,
         # set by servers since 4.0
         :client_transactions
       ])
@@ -194,8 +195,8 @@ defmodule MyXQL.Protocol do
     database = if database, do: <<database::binary, 0x00>>, else: ""
 
     <<
-      capability_flags::uint4,
-      max_packet_size::uint4,
+      capability_flags::uint4(),
+      max_packet_size::uint4(),
       charset,
       0::uint(23),
       <<username::binary, 0x00>>,
@@ -213,8 +214,8 @@ defmodule MyXQL.Protocol do
         )
       ) do
     <<
-      capability_flags::uint4,
-      max_packet_size::uint4,
+      capability_flags::uint4(),
+      max_packet_size::uint4(),
       charset,
       0::uint(23)
     >>
@@ -272,12 +273,12 @@ defmodule MyXQL.Protocol do
 
   # https://dev.mysql.com/doc/internals/en/com-stmt-close.html
   def encode_com({:com_stmt_close, statement_id}) do
-    [0x19, <<statement_id::uint4>>]
+    [0x19, <<statement_id::uint4()>>]
   end
 
   # https://dev.mysql.com/doc/internals/en/com-stmt-reset.html
   def encode_com({:com_stmt_reset, statement_id}) do
-    [0x1A, <<statement_id::uint4>>]
+    [0x1A, <<statement_id::uint4()>>]
   end
 
   # https://dev.mysql.com/doc/internals/en/com-stmt-execute.html
@@ -295,9 +296,9 @@ defmodule MyXQL.Protocol do
 
     <<
       command,
-      statement_id::uint4,
-      flags::uint1,
-      iteration_count::uint4,
+      statement_id::uint4(),
+      flags::uint1(),
+      iteration_count::uint4(),
       params::binary
     >>
   end
@@ -306,8 +307,8 @@ defmodule MyXQL.Protocol do
   def encode_com({:com_stmt_fetch, statement_id, num_rows}) do
     <<
       0x1C,
-      statement_id::uint4,
-      num_rows::uint4
+      statement_id::uint4(),
+      num_rows::uint4()
     >>
   end
 
@@ -325,8 +326,8 @@ defmodule MyXQL.Protocol do
   end
 
   def decode_com_stmt_prepare_response(
-        <<0x00, statement_id::uint4, num_columns::uint2, num_params::uint2, 0,
-          num_warnings::uint2>>,
+        <<0x00, statement_id::uint4(), num_columns::uint2(), num_params::uint2(), 0,
+          num_warnings::uint2()>>,
         next_data,
         :initial
       ) do
@@ -419,7 +420,7 @@ defmodule MyXQL.Protocol do
     null_bitmap_size = div(count + 7, 8)
     new_params_bound_flag = 1
 
-    <<null_bitmap::uint(null_bitmap_size), new_params_bound_flag::uint1, types::binary,
+    <<null_bitmap::uint(null_bitmap_size), new_params_bound_flag::uint1(), types::binary,
       values::binary>>
   end
 
@@ -461,12 +462,12 @@ defmodule MyXQL.Protocol do
 
     <<
       0x0C,
-      _character_set::uint2,
-      column_length::uint4,
-      type::uint1,
-      flags::uint2,
-      _decimals::uint1,
-      0::uint2
+      _character_set::uint2(),
+      column_length::uint4(),
+      type::uint1(),
+      flags::uint2(),
+      _decimals::uint1(),
+      0::uint2()
     >> = rest
 
     column_def(
@@ -476,6 +477,26 @@ defmodule MyXQL.Protocol do
       flags: flags,
       unsigned?: has_column_flag?(flags, :unsigned_flag)
     )
+  end
+
+  def decode_more_results(payload, "", resultset, result_state) do
+    ok_packet(status_flags: status_flags) = decode_generic_response(payload)
+
+    case result_state do
+      :single ->
+        {:halt, resultset(resultset, status_flags: status_flags)}
+
+      {:many, results} ->
+        {:halt, [resultset(resultset, status_flags: status_flags) | results]}
+    end
+  end
+
+  def decode_more_results(_payload, _next_data, _resultset, :single) do
+    {:error, :multiple_results}
+  end
+
+  def decode_more_results(_payload, _next_data, resultset, {:many, results}) do
+    {:cont, :initial, {:many, [resultset | results]}}
   end
 
   defp decode_resultset(payload, _next_data, :initial, _row_decoder) do
@@ -494,12 +515,13 @@ defmodule MyXQL.Protocol do
   end
 
   defp decode_resultset(
-         <<0xFE, num_warnings::uint2, status_flags::uint2>>,
+         <<0xFE, num_warnings::uint2(), status_flags::uint2()>>,
          next_data,
          {:column_defs_eof, column_defs},
          _row_decoder
        ) do
-    if has_status_flag?(status_flags, :server_status_cursor_exists) do
+    if has_status_flag?(status_flags, :server_status_cursor_exists) and
+         not has_status_flag?(status_flags, :server_more_results_exists) do
       "" = next_data
 
       {:halt,
@@ -516,7 +538,7 @@ defmodule MyXQL.Protocol do
   end
 
   defp decode_resultset(
-         <<0xFE, num_warnings::uint2, status_flags::uint2>>,
+         <<0xFE, num_warnings::uint2(), status_flags::uint2()>>,
          _next_data,
          {:rows, column_defs, num_rows, acc},
          _row_decoder
@@ -531,7 +553,7 @@ defmodule MyXQL.Protocol do
       )
 
     if has_status_flag?(status_flags, :server_more_results_exists) do
-      {:cont, {:trailing_ok_packet, resultset}}
+      {:cont, {:more_results, resultset}}
     else
       {:halt, resultset}
     end
@@ -544,14 +566,5 @@ defmodule MyXQL.Protocol do
   defp decode_resultset(payload, _next_data, {:rows, column_defs, num_rows, acc}, row_decoder) do
     row = row_decoder.(payload, column_defs)
     {:cont, {:rows, column_defs, num_rows + 1, [row | acc]}}
-  end
-
-  defp decode_resultset(payload, "", {:trailing_ok_packet, resultset}, _row_decoder) do
-    ok_packet(status_flags: status_flags) = decode_generic_response(payload)
-    {:halt, resultset(resultset, status_flags: status_flags)}
-  end
-
-  defp decode_resultset(_payload, _next_data, {:trailing_ok_packet, _resultset}, _row_decoder) do
-    {:error, :multiple_results}
   end
 end
