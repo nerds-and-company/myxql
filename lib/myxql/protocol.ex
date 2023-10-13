@@ -159,7 +159,6 @@ defmodule MyXQL.Protocol do
       put_capability_flags([
         :client_protocol_41,
         :client_secure_connection,
-        :client_multi_statements,
         # set by servers since 4.0
         :client_transactions
       ])
